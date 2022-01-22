@@ -14,7 +14,7 @@ dependencies:
   flutter_webrtc:
     git:
       url: git://github.com/maxhora/flutter-webrtc.git
-      ref: macos-screen-capture
+      ref: 40c758106694bc31be572cde26e3630825ef5180
   shared_preferences: ^2.0.7
   http: ^0.13.3
   path_provider: ^2.0.2
