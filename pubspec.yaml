@@ -14,7 +14,7 @@ dependencies:
   flutter_webrtc:
     git:
       url: git://github.com/maxhora/flutter-webrtc.git
-      ref: 66ac19849b626e86aafb8c5f62e2261d91d8478e
+      ref: f2673c4bf29f6d32dec15c2b00ddbc455b2b97c4
   shared_preferences: ^2.0.7
   http: ^0.13.3
   path_provider: ^2.0.2
