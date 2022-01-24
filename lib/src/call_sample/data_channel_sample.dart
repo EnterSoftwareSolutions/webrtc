@@ -1,34 +1,30 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'dart:core';
 import 'dart:async';
 import 'dart:typed_data';
 import 'signaling.dart';
-import 'package:flutter_webrtc/rtc_data_channel.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 class DataChannelSample extends StatefulWidget {
   static String tag = 'call_sample';
-
-  final String ip;
-
-  DataChannelSample({Key key, @required this.ip}) : super(key: key);
+  final String host;
+  DataChannelSample({required this.host});
 
   @override
-  _DataChannelSampleState createState() => new _DataChannelSampleState(serverIP: ip);
+  _DataChannelSampleState createState() => _DataChannelSampleState();
 }
 
 class _DataChannelSampleState extends State<DataChannelSample> {
-  Signaling _signaling;
-  String _displayName =
-      Platform.localHostname + '(' + Platform.operatingSystem + ")";
-  List<dynamic> _peers;
-  var _selfId;
+  Signaling? _signaling;
+  List<dynamic> _peers = [];
+  String? _selfId;
   bool _inCalling = false;
-  final String serverIP;
-  RTCDataChannel _dataChannel;
-  Timer _timer;
+  RTCDataChannel? _dataChannel;
+  Session? _session;
+  Timer? _timer;
   var _text = '';
-  _DataChannelSampleState({Key key, @required this.serverIP});
+  // ignore: unused_element
+  _DataChannelSampleState();
 
   @override
   initState() {
@@ -39,92 +35,90 @@ class _DataChannelSampleState extends State<DataChannelSample> {
   @override
   deactivate() {
     super.deactivate();
-    if (_signaling != null) _signaling.close();
-    if(_timer != null){
-      _timer.cancel();
-    }
+    _signaling?.close();
+    _timer?.cancel();
   }
 
   void _connect() async {
-    if (_signaling == null) {
-      _signaling = new Signaling(serverIP, _displayName)
-        ..connect();
+    _signaling ??= Signaling(widget.host)..connect();
 
-      _signaling.onDataChannelMessage = (dc, RTCDataChannelMessage data){
-        setState(() {
-          if(data.isBinary) {
-            print('Got binary [' + data.binary.toString() + ']');
-          }
-          else{
-            _text = data.text;
-          }
-        });
-      };
-
-      _signaling.onDataChannel = (channel){
-        _dataChannel = channel;
-      };
-
-      _signaling.onStateChange = (SignalingState state) {
-        switch (state) {
-          case SignalingState.CallStateNew:
-            {
-              this.setState(() {
-                _inCalling = true;
-              });
-              _timer = new Timer.periodic(Duration(seconds: 1), _handleDataChannelTest);
-              break;
-            }
-          case SignalingState.CallStateBye:
-            {
-              this.setState(() {
-                _inCalling = false;
-              });
-              if(_timer != null){
-                _timer.cancel();
-                _timer = null;
-              }
-              _dataChannel = null;
-              _text = '';
-              break;
-            }
-          case SignalingState.CallStateInvite:
-          case SignalingState.CallStateConnected:
-          case SignalingState.CallStateRinging:
-          case SignalingState.ConnectionClosed:
-          case SignalingState.ConnectionError:
-          case SignalingState.ConnectionOpen:
-            break;
+    _signaling?.onDataChannelMessage = (_, dc, RTCDataChannelMessage data) {
+      setState(() {
+        if (data.isBinary) {
+          print('Got binary [' + data.binary.toString() + ']');
+        } else {
+          _text = data.text;
         }
-      };
-
-      _signaling.onPeersUpdate = ((event) {
-        this.setState(() {
-          _selfId = event['self'];
-          _peers = event['peers'];
-        });
       });
-    }
+    };
+
+    _signaling?.onDataChannel = (_, channel) {
+      _dataChannel = channel;
+    };
+
+    _signaling?.onSignalingStateChange = (SignalingState state) {
+      switch (state) {
+        case SignalingState.ConnectionClosed:
+        case SignalingState.ConnectionError:
+        case SignalingState.ConnectionOpen:
+          break;
+      }
+    };
+
+    _signaling?.onCallStateChange = (Session session, CallState state) {
+      switch (state) {
+        case CallState.CallStateNew:
+          {
+            setState(() {
+              _session = session;
+              _inCalling = true;
+            });
+            _timer =
+                Timer.periodic(Duration(seconds: 1), _handleDataChannelTest);
+            break;
+          }
+        case CallState.CallStateBye:
+          {
+            setState(() {
+              _inCalling = false;
+            });
+            _timer?.cancel();
+            _dataChannel = null;
+            _inCalling = false;
+            _session = null;
+            _text = '';
+            break;
+          }
+        case CallState.CallStateInvite:
+        case CallState.CallStateConnected:
+        case CallState.CallStateRinging:
+      }
+    };
+
+    _signaling?.onPeersUpdate = ((event) {
+      setState(() {
+        _selfId = event['self'];
+        _peers = event['peers'];
+      });
+    });
   }
 
   _handleDataChannelTest(Timer timer) async {
-    if(_dataChannel != null){
-      String text = 'Say hello ' + timer.tick.toString() + ' times, from [' + _selfId + ']';
-      _dataChannel.send(RTCDataChannelMessage.fromBinary(Uint8List(timer.tick + 1)));
-      _dataChannel.send(RTCDataChannelMessage(text));
-    }
+    String text =
+        'Say hello ' + timer.tick.toString() + ' times, from [$_selfId]';
+    _dataChannel
+        ?.send(RTCDataChannelMessage.fromBinary(Uint8List(timer.tick + 1)));
+    _dataChannel?.send(RTCDataChannelMessage(text));
   }
 
   _invitePeer(context, peerId) async {
-    if (_signaling != null && peerId != _selfId) {
-      _signaling.invite(peerId, 'data', false);
+    if (peerId != _selfId) {
+      _signaling?.invite(peerId, 'data', false);
     }
   }
 
   _hangUp() {
-    if (_signaling != null) {
-      _signaling.bye();
-    }
+    _signaling?.bye(_session!.sid);
   }
 
   _buildRow(context, peer) {
@@ -132,11 +126,11 @@ class _DataChannelSampleState extends State<DataChannelSample> {
     return ListBody(children: <Widget>[
       ListTile(
         title: Text(self
-            ? peer['name'] + '[Your self]'
-            : peer['name'] + '[' + peer['user_agent'] + ']'),
+            ? peer['name'] + ', ID: ${peer['id']} ' + ' [Your self]'
+            : peer['name'] + ', ID: ${peer['id']} '),
         onTap: () => _invitePeer(context, peer['id']),
         trailing: Icon(Icons.sms),
-        subtitle: Text('id: ' + peer['id']),
+        subtitle: Text('[' + peer['user_agent'] + ']'),
       ),
       Divider()
     ]);
@@ -144,9 +138,10 @@ class _DataChannelSampleState extends State<DataChannelSample> {
 
   @override
   Widget build(BuildContext context) {
-    return new Scaffold(
-      appBar: new AppBar(
-        title: new Text('Data Channel Sample'),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Data Channel Sample' +
+            (_selfId != null ? ' [Your ID ($_selfId)] ' : '')),
         actions: <Widget>[
           IconButton(
             icon: const Icon(Icons.settings),
@@ -159,14 +154,16 @@ class _DataChannelSampleState extends State<DataChannelSample> {
           ? FloatingActionButton(
               onPressed: _hangUp,
               tooltip: 'Hangup',
-              child: new Icon(Icons.call_end),
+              child: Icon(Icons.call_end),
             )
           : null,
-      body: _inCalling? new Center(
-              child: new Container(
-              child:  Text('Recevied => ' + _text),
+      body: _inCalling
+          ? Center(
+              child: Container(
+                child: Text('Recevied => ' + _text),
               ),
-              ) : new ListView.builder(
+            )
+          : ListView.builder(
               shrinkWrap: true,
               padding: const EdgeInsets.all(0.0),
               itemCount: (_peers != null ? _peers.length : 0),
